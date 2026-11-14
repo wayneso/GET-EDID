@@ -3,8 +3,10 @@
 #include <iomanip>
 #include <string>
 #include <vector>
-#include <cmath>
 #include <fstream>
+#include <algorithm>
+
+#include "EDID_INFO.h"
 
 #pragma comment(lib, "Advapi32.lib")
 
@@ -33,213 +35,15 @@ void PrintHex(const vector<BYTE>& edid)
 }
 
 
-//------------------------------------------------
-// EDID解析
-//------------------------------------------------
-void ParseEDID(const vector<BYTE>& edid)
+void SaveEDIDTxt(
+    const vector<BYTE>& edid,
+    const string& path)
 {
-    if (edid.size() < 128)
-        return;
-
-
-    // Manufacturer
-    WORD id =
-        ((WORD)edid[8] << 8) |
-        edid[9];
-
-
-    char manufacturer[4];
-
-    manufacturer[0] =
-        ((id >> 10) & 0x1F)
-        + 'A' - 1;
-
-    manufacturer[1] =
-        ((id >> 5) & 0x1F)
-        + 'A' - 1;
-
-    manufacturer[2] =
-        (id & 0x1F)
-        + 'A' - 1;
-
-    manufacturer[3] = 0;
-
-
-
-    // Product ID
-    WORD productID =
-        edid[10] |
-        ((WORD)edid[11] << 8);
-
-
-
-    // Serial
-    DWORD serial =
-        edid[12] |
-        ((DWORD)edid[13] << 8) |
-        ((DWORD)edid[14] << 16) |
-        ((DWORD)edid[15] << 24);
-
-
-
-    // Date
-    int week = edid[16];
-    int year = edid[17] + 1990;
-
-
-
-    // Size
-    int width = edid[21];
-    int height = edid[22];
-
-
-    float diagonal =
-        sqrt(
-            width * width +
-            height * height
-        ) / 2.54f;
-
-
-
-    // Monitor Name
-    string name = "Unknown";
-    string sn = "Unknown";
-
-    for (int i = 54; i <= 108; i += 18)
-    {
-        if (edid[i] == 0x00 &&
-            edid[i + 1] == 0x00 &&
-            edid[i + 2] == 0x00 &&
-            edid[i + 3] == 0xFC)
-        {
-            char temp[14] = { 0 };
-
-
-            for (int j = 0; j < 13; j++)
-            {
-                if (edid[i + 5 + j] == 0x0A)
-                    break;
-
-                temp[j] = edid[i + 5 + j];
-            }
-
-
-            name = temp;
-
-            break;
-        }
-    }
-
-    // Serial Number Descriptor
-    for (int i = 54; i <= 108; i += 18)
-    {
-        if (edid[i] == 0x00 &&
-            edid[i + 1] == 0x00 &&
-            edid[i + 2] == 0x00 &&
-            edid[i + 3] == 0xFF)
-        {
-            char temp[14] = { 0 };
-
-
-            for (int j = 0; j < 13; j++)
-            {
-                if (edid[i + 5 + j] == 0x0A)
-                    break;
-
-
-                if (edid[i + 5 + j] >= 0x20)
-                {
-                    temp[j] = edid[i + 5 + j];
-                }
-            }
-
-
-            sn = temp;
-
-            break;
-        }
-    }
-
-    cout
-        << "\n----------- EDID INFO -----------\n";
-
-
-    cout
-        << "Manufacturer : "
-        << manufacturer
-        << endl;
-
-
-    cout
-        << "Product ID   : 0x"
-        << hex
-        << uppercase
-        << productID
-        << dec
-        << endl;
-
-
-    cout
-        << "Serial       : "
-        << serial
-        << endl;
-
-    cout
-        << "SN           : "
-        << sn
-        << endl;
-
-    cout
-        << "Date         : Week "
-        << week
-        << " Year "
-        << year
-        << endl;
-
-
-    cout
-        << "EDID Version : "
-        << (int)edid[18]
-        << "."
-        << (int)edid[19]
-        << endl;
-
-
-    cout
-        << "Name         : "
-        << name
-        << endl;
-
-
-    cout
-        << "Size         : "
-        << width
-        << "cm x "
-        << height
-        << "cm"
-        << endl;
-
-
-    cout
-        << "Diagonal     : "
-        << fixed
-        << setprecision(1)
-        << diagonal
-        << " inch"
-        << endl;
-
-
-    cout
-        << "---------------------------------\n";
-}
-
-void SaveEDIDTxt(const vector<BYTE>& edid)
-{
-    ofstream file("EDID.txt");
+    ofstream file(path);
 
     if (!file.is_open())
     {
-        cout << "Create EDID.txt failed\n";
+        cout << "Create " << path << " failed\n";
         return;
     }
 
@@ -276,7 +80,7 @@ void SaveEDIDTxt(const vector<BYTE>& edid)
     file.close();
 
 
-    cout << "Save EDID.txt OK\n";
+    cout << "Save " << path << " OK\n";
 }
 
 //------------------------------------------------
@@ -329,10 +133,388 @@ bool ReadEDID(
 
 
 //------------------------------------------------
+// 输出 EDID
+//------------------------------------------------
+void ShowEDID(
+    const vector<BYTE>& edid,
+    const string& monitorInfo,
+    const string& txtPath)
+{
+    cout
+        << "\n============================\n";
+
+    if (!monitorInfo.empty())
+        cout << monitorInfo;
+
+    cout
+        << "EDID Size : "
+        << edid.size()
+        << " Bytes\n";
+
+
+    //解析
+    PrintEDIDInfo(edid);
+
+
+    //保存TXT
+    SaveEDIDTxt(edid, txtPath);
+
+
+    //打印HEX
+    cout
+        << "\n----------- EDID HEX -----------\n";
+
+    PrintHex(edid);
+}
+
+
+
+//------------------------------------------------
+// 显示器信息
+//------------------------------------------------
+struct ActiveMonitor
+{
+    string deviceName;     // \\.\DISPLAY1\Monitor0
+    string instanceId;     // DISPLAY\GBT2761\4&...
+    string interfaceType;  // HDMI / DisplayPort / ...
+    vector<BYTE> edid;
+};
+
+
+static string WideToAnsi(const wchar_t* w)
+{
+    int len = WideCharToMultiByte(
+        CP_ACP, 0, w, -1, NULL, 0, NULL, NULL);
+
+    if (len <= 1)
+        return "";
+
+    string s(len - 1, '\0');
+
+    WideCharToMultiByte(
+        CP_ACP, 0, w, -1, &s[0], len, NULL, NULL);
+
+    return s;
+}
+
+
+static char LowerAscii(char c)
+{
+    if (c >= 'A' && c <= 'Z')
+        return (char)(c - 'A' + 'a');
+
+    return c;
+}
+
+
+static bool EqualNoCase(const string& a, const string& b)
+{
+    if (a.size() != b.size())
+        return false;
+
+    for (size_t i = 0; i < a.size(); i++)
+    {
+        if (LowerAscii(a[i]) != LowerAscii(b[i]))
+            return false;
+    }
+
+    return true;
+}
+
+
+static const char* OutputTechnologyName(
+    DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY tech)
+{
+    switch (tech)
+    {
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HD15:
+        return "VGA";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_SVIDEO:
+        return "S-Video";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_COMPOSITE_VIDEO:
+        return "Composite";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_COMPONENT_VIDEO:
+        return "Component";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DVI:
+        return "DVI";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI:
+        return "HDMI";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS:
+        return "LVDS";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EXTERNAL:
+        return "DisplayPort";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED:
+        return "eDP";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL:
+        return "Internal";
+
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_MIRACAST:
+        return "Miracast";
+
+    default:
+        return "Unknown";
+    }
+}
+
+
+//------------------------------------------------
+// 通过 QueryDisplayConfig 查询当前接口类型
+//------------------------------------------------
+static string GetInterfaceType(const string& monitorPath)
+{
+    UINT32 pathCount = 0;
+    UINT32 modeCount = 0;
+
+    if (GetDisplayConfigBufferSizes(
+        QDC_ONLY_ACTIVE_PATHS,
+        &pathCount,
+        &modeCount)
+        != ERROR_SUCCESS)
+    {
+        return "";
+    }
+
+    vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+    vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+
+    if (QueryDisplayConfig(
+        QDC_ONLY_ACTIVE_PATHS,
+        &pathCount,
+        paths.data(),
+        &modeCount,
+        modes.data(),
+        NULL)
+        != ERROR_SUCCESS)
+    {
+        return "";
+    }
+
+
+    for (UINT32 i = 0; i < pathCount; i++)
+    {
+        DISPLAYCONFIG_TARGET_DEVICE_NAME target = {};
+
+        target.header.type =
+            DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+        target.header.size = sizeof(target);
+        target.header.adapterId =
+            paths[i].targetInfo.adapterId;
+        target.header.id = paths[i].targetInfo.id;
+
+        if (DisplayConfigGetDeviceInfo(&target.header)
+            != ERROR_SUCCESS)
+        {
+            continue;
+        }
+
+        string targetPath =
+            WideToAnsi(target.monitorDevicePath);
+
+        if (EqualNoCase(targetPath, monitorPath))
+            return OutputTechnologyName(target.outputTechnology);
+    }
+
+
+    return "";
+}
+
+
+//------------------------------------------------
+// 枚举所有当前活动显示器
+//------------------------------------------------
+static void EnumerateActiveMonitors(
+    vector<ActiveMonitor>& monitors)
+{
+    DISPLAY_DEVICEA adapter;
+    adapter.cb = sizeof(adapter);
+
+    for (DWORD adapterIndex = 0;
+         EnumDisplayDevicesA(
+             NULL,
+             adapterIndex,
+             &adapter,
+             0);
+         adapterIndex++)
+    {
+        adapter.cb = sizeof(adapter);
+
+        if ((adapter.StateFlags &
+             DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) == 0)
+        {
+            continue;
+        }
+
+
+        DISPLAY_DEVICEA monitor;
+        monitor.cb = sizeof(monitor);
+
+        for (DWORD monitorIndex = 0;
+             EnumDisplayDevicesA(
+                 adapter.DeviceName,
+                 monitorIndex,
+                 &monitor,
+                 EDD_GET_DEVICE_INTERFACE_NAME);
+             monitorIndex++)
+        {
+            monitor.cb = sizeof(monitor);
+
+            if ((monitor.StateFlags &
+                 DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) == 0)
+            {
+                continue;
+            }
+
+            if (monitor.StateFlags &
+                DISPLAY_DEVICE_MIRRORING_DRIVER)
+            {
+                continue;
+            }
+
+
+            // \\?\DISPLAY#GBT2761#4&2678e3df&0&UID4145#{...}
+            string interfacePath = monitor.DeviceID;
+            string id = interfacePath;
+
+            if (id.rfind("\\\\?\\", 0) == 0)
+                id.erase(0, 4);
+
+            size_t guid = id.find("#{");
+
+            if (guid != string::npos)
+                id.erase(guid);
+
+            for (char& c : id)
+            {
+                if (c == '#')
+                    c = '\\';
+            }
+
+
+            string regPath =
+                "SYSTEM\\CurrentControlSet\\Enum\\" +
+                id +
+                "\\Device Parameters";
+
+
+            HKEY hKey;
+
+            if (RegOpenKeyExA(
+                HKEY_LOCAL_MACHINE,
+                regPath.c_str(),
+                0,
+                KEY_READ,
+                &hKey)
+                != ERROR_SUCCESS)
+            {
+                continue;
+            }
+
+
+            vector<BYTE> edid;
+            bool ok = ReadEDID(hKey, edid);
+
+            RegCloseKey(hKey);
+
+            if (!ok || edid.empty())
+                continue;
+
+
+            ActiveMonitor info;
+
+            info.deviceName = monitor.DeviceName;
+            info.instanceId = id;
+            info.interfaceType = GetInterfaceType(interfacePath);
+            info.edid = edid;
+
+            monitors.push_back(info);
+        }
+    }
+}
+
+
+
+//------------------------------------------------
 // 扫描显示器
 //------------------------------------------------
 void ScanDisplay()
 {
+    vector<ActiveMonitor> monitors;
+
+    EnumerateActiveMonitors(monitors);
+
+
+    // 笔记本内建屏优先显示
+    stable_sort(
+        monitors.begin(),
+        monitors.end(),
+        [](const ActiveMonitor& a, const ActiveMonitor& b)
+        {
+            auto isInternal = [](const string& type)
+            {
+                return type == "Internal" || type == "eDP";
+            };
+
+            return isInternal(a.interfaceType) &&
+                   !isInternal(b.interfaceType);
+        });
+
+
+    // 输出所有活动显示器
+    if (!monitors.empty())
+    {
+        for (size_t i = 0; i < monitors.size(); i++)
+        {
+            const ActiveMonitor& m = monitors[i];
+
+            string monitorInfo;
+
+            monitorInfo += "Monitor      : ";
+            monitorInfo += m.deviceName;
+            monitorInfo += "\n";
+
+            monitorInfo += "Monitor ID   : ";
+            monitorInfo += m.instanceId;
+            monitorInfo += "\n";
+
+            monitorInfo += "Interface    : ";
+
+            if (m.interfaceType.empty())
+                monitorInfo += "Unknown";
+            else
+                monitorInfo += m.interfaceType;
+
+            monitorInfo += "\n";
+
+            monitorInfo += "Resolution   : ";
+            monitorInfo += GetPreferredResolution(m.edid);
+            monitorInfo += "\n";
+
+
+            string txtPath = (monitors.size() > 1)
+                ? "EDID_" + to_string(i + 1) + ".txt"
+                : "EDID.txt";
+
+            ShowEDID(m.edid, monitorInfo, txtPath);
+        }
+
+        return;
+    }
+
+
+    cout
+        << "No active monitor EDID found, "
+        << "fallback to registry scan...\n";
+
+
     HKEY hDisplay;
 
 
@@ -349,15 +531,11 @@ void ScanDisplay()
     }
 
 
-
     vector<BYTE> maxEDID;
 
 
-
     DWORD vendorIndex = 0;
-
     char vendor[256];
-
 
 
     while (true)
@@ -380,7 +558,6 @@ void ScanDisplay()
         }
 
 
-
         HKEY hVendor;
 
 
@@ -392,18 +569,13 @@ void ScanDisplay()
             &hVendor)
             == ERROR_SUCCESS)
         {
-
-
             DWORD devIndex = 0;
-
             char device[256];
-
 
 
             while (true)
             {
                 DWORD deviceLen = sizeof(device);
-
 
 
                 if (RegEnumKeyExA(
@@ -421,7 +593,6 @@ void ScanDisplay()
                 }
 
 
-
                 string path =
                     "SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\";
 
@@ -431,9 +602,7 @@ void ScanDisplay()
                 path += "\\Device Parameters";
 
 
-
                 HKEY hEDID;
-
 
 
                 if (RegOpenKeyExA(
@@ -444,7 +613,6 @@ void ScanDisplay()
                     &hEDID)
                     == ERROR_SUCCESS)
                 {
-
                     vector<BYTE> data;
 
 
@@ -452,7 +620,6 @@ void ScanDisplay()
                         hEDID,
                         data))
                     {
-
                         // 保留最大EDID
                         if (data.size() > maxEDID.size())
                         {
@@ -477,38 +644,11 @@ void ScanDisplay()
     }
 
 
-
     RegCloseKey(hDisplay);
 
 
-
-    // 最终输出最大EDID
-
     if (!maxEDID.empty())
-    {
-        cout
-            << "\n============================\n";
-
-        cout
-            << "EDID Size : "
-            << maxEDID.size()
-            << " Bytes\n";
-
-
-        //解析
-        ParseEDID(maxEDID);
-
-
-        //保存TXT
-        SaveEDIDTxt(maxEDID);
-
-
-        //打印HEX
-        cout
-            << "\n----------- EDID HEX -----------\n";
-
-        PrintHex(maxEDID);
-    }
+        ShowEDID(maxEDID, "", "EDID.txt");
 }
 
 

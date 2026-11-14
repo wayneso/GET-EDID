@@ -12,7 +12,7 @@ endif()
 project ("GET_EDID")
 
 # 将源代码添加到此项目的可执行文件。
-add_executable (GET_EDID "GET_EDID.cpp" "GET_EDID.h")
+add_executable (GET_EDID "GET_EDID.cpp" "GET_EDID.h" "EDID_INFO.cpp" "EDID_INFO.h")
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET GET_EDID PROPERTY CXX_STANDARD 20)
@@ -22,4 +22,5 @@ endif()
 target_link_libraries(GET_EDID
     setupapi
     advapi32
+    user32
 )
